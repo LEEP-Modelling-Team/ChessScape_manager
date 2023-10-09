@@ -10,10 +10,10 @@ in files containing a single climate variable for a one month time series for
 all 1km cells in GB.
 This script rechunks the chess-scape netCDF files in two ways, based
 on user input:
-    1 - each chunk contains a 60 year daily time series of all climatic 
+    1 - each chunk contains a the time series of all climatic 
         variables for 100 cells contained in each 10km2 tile of the
         British National Grid. 
-    2 - each chunk contains a 60 year daily time series of all climatic 
+    2 - each chunk contains the daily time series of all climatic 
         variables for 10000 cells contained in each 100km2 tile of the
         British National Grid. 
 The climate variables of interest are: 'tas', 'tasmax', 'tasmin', 'pr', 'rlds', 
@@ -41,7 +41,7 @@ def rechunk_chess(os_cell, rcp, ensemble, config):
         os.mkdir(out_path)
 
     # nc data parameters
-    years = list(range(2020, 2081))
+    years = list(range(1980, 2081))
     climate_vars = ['tas', 'tasmax', 'tasmin', 'pr', 'rlds', 'rsds', 'hurs', 'sfcWind']
     # climate_vars = ['tas', 'tasmax', 'tasmin', 'pr', 'rlds', 'rsds', 'hurs', 'sfcWind', 'psurf']
     t = time.time()
