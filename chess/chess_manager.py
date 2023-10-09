@@ -41,7 +41,7 @@ def download_chess(config,**kwargs):
            climate_vars depend on whether the data has been bias corrected or not!
     '''
     start_year = kwargs.get('start_year', 1980)
-    end_year = kwargs.get('end_year' + 1, 2081)
+    end_year = kwargs.get('end_year', 2080) + 1
     rcps = kwargs.get('rcps', ['rcp26', 'rcp45', 'rcp60', 'rcp85'])
     climate_vars = kwargs.get(
         'climate_vars', 
