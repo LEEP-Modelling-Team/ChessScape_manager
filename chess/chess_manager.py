@@ -21,7 +21,7 @@ import re
 
 # pylint: disable=R0914
 # pylint: disable=R1702
-def download_chess(config, rcps, climate_vars, ensembles, bias_corrected):
+def download_chess(config,**kwargs):
     '''
     FTP download of ChessScape data, which is then
     saved into a specified directory
@@ -40,6 +40,16 @@ def download_chess(config, rcps, climate_vars, ensembles, bias_corrected):
            Refer to the ChessScape data documentation: the available
            climate_vars depend on whether the data has been bias corrected or not!
     '''
+    start_year = kwargs.get('start_year', 1980)
+    end_year = kwargs.get('end_year' + 1, 2081)
+    rcps = kwargs.get('rcps', ['rcp26', 'rcp45', 'rcp60', 'rcp85'])
+    climate_vars = kwargs.get(
+        'climate_vars', 
+        ['tas', 'tasmax', 'tasmin', 'pr', 'rlds', 'rsds', 'hurs', 'sfcWind']
+    )
+    ensembles = kwargs.get('ensembles', [1, 4, 6, 15])
+    bias_corrected = kwargs.get('bias_corrected', True)
+
     ddir = config.data_dirs['ceda_dir']
     user = config.ceda_parameters['ceda_usr']
     pwd = config.ceda_parameters['ceda_pwd']
@@ -65,7 +75,7 @@ def download_chess(config, rcps, climate_vars, ensembles, bias_corrected):
             for var in climate_vars:
 
                 # loop through years
-                for year in range(2020,2081):
+                for year in range(start_year,end_year):
 
                     # loop through months
                     for month in range(1,13):
