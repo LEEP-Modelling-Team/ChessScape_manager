@@ -1,6 +1,6 @@
 # ChessScape Manager
 
-This repository allows to download and process the Chess-Scape climate projections at 1km resolution produced by the UK Centre for Ecology and Hydrology from the Met-Office UKCP18 Climate Projections.
+The ChessScape Manager allows to download and process the Chess-Scape climate projections at 1km resolution produced by the UK Centre for Ecology and Hydrology from the Met-Office UKCP18 Climate Projections.
 
 ## FEATURES
 Two main features are contained in this repository:
