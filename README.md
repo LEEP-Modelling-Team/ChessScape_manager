@@ -9,8 +9,8 @@ Two main features are contained in this repository:
 
 ## USE
 **1 - BULK DOWNLOADER: bulk_downloader.py**  
-    This script allows to connect to the CEDA FTP server and download the Chess-Scape data based on rcp, cliamte variable, and ensemble member of interest.
-    Unless a user specifies a custom selection the data to download, this script will download automatically all available years (1980-2080), for all 4 ensemble members for all available RCPs and for the following climate variables: 'tas', 'tasmax', 'tasmin', 'pr', 'rlds', 'rsds', 'hurs', 'sfcWind'    
+    This script allows to connect to the CEDA FTP server and download the Chess-Scape data based on rcp, climate variable and ensemble member of interest.
+    Unless a user specifies a custom selection the data to download, this script will download automatically all available years (1980-2080), for all 4 ensemble members for all available RCPs and for the following climate variables: 'tas', 'tasmax', 'tasmin', 'pr', 'rlds', 'rsds', 'hurs', 'sfcWind'. More variables can be downloaded if available.    
     For information on the available RCPs, ensemble members and climate variables visit CEDA at https://tinyurl.com/muezkh5b
 
 **2 - DATA REORGANISATION: rechunk_chess.py**  
@@ -21,6 +21,7 @@ Two main features are contained in this repository:
     For both cases, the length of the time series will be based on the years avaiable, which depend on whether the user has downloaded all available years or a custom range (see bulkdownloader.py above)
 
 ## SETUP
+Before using the ChessScape Manager, make sure to obtain access authorisation from CEDA (https://help.ceda.ac.uk/article/280-ftp).  
 After having obtained the credentials from CEDA to connect to their FTP server:  
 
 1. Install all the required dependencies running the following command:  
@@ -41,5 +42,4 @@ After having obtained the credentials from CEDA to connect to their FTP server:
     'CEDA_pwd': your CEDA FTP Pssword
     ```
 **N.B.**  
-The CEDA access credentials and directories for download are defined in the congfig.ini file, which needs to be edited by the user before running the script.
-Make sure to obtain access authorisation from CEDA (https://help.ceda.ac.uk/article/280-ftp).
+Do not hard code your user credentials in the config.ini file!
