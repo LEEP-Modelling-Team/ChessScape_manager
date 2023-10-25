@@ -24,22 +24,33 @@ Two main features are contained in this repository:
 Before using the ChessScape Manager, make sure to obtain access authorisation from CEDA (https://help.ceda.ac.uk/article/280-ftp).  
 After having obtained the credentials from CEDA to connect to their FTP server:  
 
-1. Install all the required dependencies running the following command:  
+1. Clone the repository to your local machine
+
+2. Install all the required dependencies running the following command:  
     ```
     pip install -r requirements.txt
     ```  
 
-2. Open the 'config.ini' file with a text editor and edit the paths where you want the data to be stored:  
+3. Open the 'config.ini' file with a text editor and edit the paths where you want the data to be stored:  
     'ceda_dir' will contain the raw netcdf files downloaded from CEDA  
     'osgb_dir' will contain the new files rechunked to be associated to British National Grid tiles (see Section 2 in USE above)  
     ```
     ceda_dir = Path\to\Raw\Data\
     osgb_dir = Path\to\Rechuncked\Data\
     ```
-3. Add the following environment variables:   
+4. Add the following environment variables:   
     ```    
     'CEDA_user': your CEDA FTP Username
     'CEDA_pwd': your CEDA FTP Pssword
     ```
 **N.B.**  
 Do not hard code your user credentials in the config.ini file!
+
+## HOW TO RUN
+Open a terminal and navigate to the main folder containing the repository.
+- To run the bulk downloader, type in terminal  
+    `python bulk_downloader.py`
+- To run the file rechunking programme, after having downloaded the dataset, type in terminal:  
+    `python rechunk_chess.py`  
+    
+Both commands will run the programmes with default parameters. Both scripts can take user-defined input parameters (see docstring in both scripts for the available options and further instructions)
