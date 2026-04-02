@@ -35,65 +35,70 @@ def rechunk_chess(os_cell, rcp, ensemble, config):
     Take netcdf files containing the ChessScape climate data and rechunk
     them to be in the format required for the Wofost crop yield model
     """
-    nc_path = config.data_dirs['ceda_dir']
-    out_path = config.data_dirs['osgb_dir']
-    if not os.path.isdir(out_path):
-        os.mkdir(out_path)
+    try:
+        nc_path = config.data_dirs['ceda_dir']
+        out_path = config.data_dirs['osgb_dir']
+        os.makedirs(out_path, exist_ok=True)
 
-    # nc data parameters
-    years = list(range(1980, 2081))
-    climate_vars = ['tas', 'tasmax', 'tasmin', 'pr', 'rlds', 'rsds', 'hurs', 'sfcWind']
-    # climate_vars = ['tas', 'tasmax', 'tasmin', 'pr', 'rlds', 'rsds', 'hurs', 'sfcWind', 'psurf']
-    t = time.time()
-    bbox = osgrid2bbox(os_cell, '10km')
-    # initialise empty xr dataset
-    os_chunk = xr.Dataset()
+        # nc data parameters
+        years = list(range(1980, 2081))
+        climate_vars = ['tas', 'tasmax', 'tasmin', 'pr', 'rlds', 'rsds', 'hurs', 'sfcWind']
+        # climate_vars = ['tas', 'tasmax', 'tasmin', 'pr', 'rlds', 'rsds', 'hurs', 'sfcWind', 'psurf']
+        t = time.time()
+        bbox = osgrid2bbox(os_cell, '10km')
+        # initialise empty xr dataset
+        os_chunk = xr.Dataset()
 
-    # loop through climate_vars and files for each var (i.e. months)
-    print(f'Processing cell \'{os_cell}\' ...')
-    for var in climate_vars:
-        counter = 1
-        file_list = filter_files(rcp, years, var, ensemble, nc_path)
-        list_length = len(file_list)
-        print_progress_bar(0, list_length, prefix = f'{var}:', suffix = 'Complete', length = 50)
-        cell_data = None  # Initialize before file loop
-        for file in file_list:
-            print_progress_bar(counter,
-                             list_length,
-                             prefix = f'{var}:',
-                             suffix = 'Complete',
-                             length = 50)
-            counter += 1
-            try:
-                nc_file = xr.open_dataset(file, engine='netcdf4')[var]
-                filtered = nc_file.where((nc_file.x >= bbox['xmin']) &
-                    (nc_file.x < bbox['xmax']) &
-                    (nc_file.y >= bbox['ymin']) &
-                    (nc_file.y < bbox['ymax']), drop=True)
-                
-                # Skip if no data points match the bounding box
-                if filtered.size == 0:
+        # loop through climate_vars and files for each var (i.e. months)
+        print(f'Processing cell \'{os_cell}\' ...')
+        for var in climate_vars:
+            counter = 1
+            file_list = filter_files(rcp, years, var, ensemble, nc_path)
+            list_length = len(file_list)
+            print_progress_bar(0, list_length, prefix = f'{os_cell} {var}:', suffix = 'Complete', length = 50)
+            cell_data = None  # Initialize before file loop
+            for file in file_list:
+                print_progress_bar(counter,
+                                 list_length,
+                                 prefix = f'{os_cell} {var}:',
+                                 suffix = 'Complete',
+                                 length = 50)
+                counter += 1
+                try:
+                    nc_file = xr.open_dataset(file, engine='netcdf4')[var]
+                    # Use .sel() with slice for more reliable spatial subsetting
+                    filtered = nc_file.sel(
+                        x=slice(bbox['xmin'], bbox['xmax']),
+                        y=slice(bbox['ymin'], bbox['ymax'])
+                    )
+                    
+                    # Skip if no data points match the bounding box
+                    if filtered.size == 0:
+                        continue
+                    
+                    if cell_data is None:
+                        cell_data = filtered
+                    else:
+                        cell_data = xr.concat([cell_data, filtered], dim='time')
+                except (FileNotFoundError, OSError, ValueError) as e:
+                    print(f'[{os_cell}] Error with file \'{file}\': {e}. Skipping...')
                     continue
-                
-                if cell_data is None:
-                    cell_data = filtered
-                else:
-                    cell_data = xr.concat([cell_data, filtered], dim='time')
-            except (FileNotFoundError, OSError, ValueError) as e:
-                print(f'Error with file \'{file}\': {e}. Skipping...')
-                continue
 
-        # Add xr.DataArray for specified var to Dataset
-        if cell_data is not None:
-            os_chunk[var] = cell_data
+            # Add xr.DataArray for specified var to Dataset
+            if cell_data is not None:
+                os_chunk[var] = cell_data
 
-    # Sum longwave and shortwave downward surface radiation to total surface radiation
-    os_chunk['rds'] = os_chunk['rlds'] + os_chunk['rsds']
+        # Sum longwave and shortwave downward surface radiation to total surface radiation
+        os_chunk['rds'] = os_chunk['rlds'] + os_chunk['rsds']
 
-    # Save on disk
-    tot_time = time.time() - t
-    print(f'OS cell \'{os_cell}\' processed in {tot_time:.2f} seconds\n')
-    os_chunk.to_netcdf(out_path+f'{os_cell}_{rcp}_{ensemble}.nc')
+        # Save on disk
+        tot_time = time.time() - t
+        print(f'OS cell \'{os_cell}\' processed in {tot_time:.2f} seconds\n')
+        os_chunk.to_netcdf(out_path+f'{os_cell}_{rcp}_{ensemble}.nc')
+        return os_cell, True, None
+    except Exception as e:
+        print(f'[{os_cell}] FAILED: {type(e).__name__}: {e}')
+        return os_cell, False, str(e)
 # pylint: enable=R0914
 
 if __name__ == "__main__":
@@ -113,7 +118,7 @@ if __name__ == "__main__":
 
     os_grid = [code +  f'{num:02}' for code in os_regions for num in range(100)]
 
-    with multiprocessing.Pool(processes=20) as pool:
+    with multiprocessing.Pool(processes=16) as pool:
 
         # Use the pool.map() function to parallelize the loop
         chess_config = ChessConfig('config.ini')
@@ -125,5 +130,12 @@ if __name__ == "__main__":
             ensemble=ENSEMBLE,
             config=chess_config
         )
-        results = results = pool.map(rechunk_chess_partial, os_grid)
+        results = pool.map(rechunk_chess_partial, os_grid)
+    
+    # Print summary of failed tiles
+    failed = [(cell, err) for cell, success, err in results if not success]
+    if failed:
+        print(f'\n=== {len(failed)} tiles failed ===')
+        for cell, err in failed:
+            print(f'  {cell}: {err}')
     
