@@ -56,6 +56,7 @@ def rechunk_chess(os_cell, rcp, ensemble, config):
         file_list = filter_files(rcp, years, var, ensemble, nc_path)
         list_length = len(file_list)
         print_progress_bar(0, list_length, prefix = f'{var}:', suffix = 'Complete', length = 50)
+        cell_data = None  # Initialize before file loop
         for file in file_list:
             print_progress_bar(counter,
                              list_length,
@@ -64,24 +65,27 @@ def rechunk_chess(os_cell, rcp, ensemble, config):
                              length = 50)
             counter += 1
             try:
-                nc_file = xr.open_dataset(file)[var]
-                if file is file_list[0]:
-                    cell_data = nc_file.where((nc_file.x >= bbox['xmin']) &
-                        (nc_file.x < bbox['xmax']) &
-                        (nc_file.y >= bbox['ymin']) &
-                        (nc_file.y < bbox['ymax']), drop=True)
+                nc_file = xr.open_dataset(file, engine='netcdf4')[var]
+                filtered = nc_file.where((nc_file.x >= bbox['xmin']) &
+                    (nc_file.x < bbox['xmax']) &
+                    (nc_file.y >= bbox['ymin']) &
+                    (nc_file.y < bbox['ymax']), drop=True)
+                
+                # Skip if no data points match the bounding box
+                if filtered.size == 0:
+                    continue
+                
+                if cell_data is None:
+                    cell_data = filtered
                 else:
-                    df = nc_file.where((nc_file.x >= bbox['xmin']) &
-                        (nc_file.x < bbox['xmax']) &
-                        (nc_file.y >= bbox['ymin']) &
-                        (nc_file.y < bbox['ymax']), drop=True)
-                    cell_data = xr.concat([cell_data, df], dim='time')
-            except FileNotFoundError:
-                # print(f'Cannot open file \'{file}\'. Skipping...')
+                    cell_data = xr.concat([cell_data, filtered], dim='time')
+            except (FileNotFoundError, OSError, ValueError) as e:
+                print(f'Error with file \'{file}\': {e}. Skipping...')
                 continue
 
         # Add xr.DataArray for specified var to Dataset
-        os_chunk[var] = cell_data
+        if cell_data is not None:
+            os_chunk[var] = cell_data
 
     # Sum longwave and shortwave downward surface radiation to total surface radiation
     os_chunk['rds'] = os_chunk['rlds'] + os_chunk['rsds']
