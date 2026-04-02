@@ -5,8 +5,9 @@
 CHESS-SCAPE data downloader.
 ============================
 
-Script that downloads climate data from the CEDA archive and saves it on disk
-It requires a CEDA account, and the data is downloaded through ftp. 
+Script that downloads climate data from the CEDA archive and saves it on disk.
+It requires a CEDA account, and the data is downloaded via HTTP using Bearer
+token authentication (see https://help.ceda.ac.uk/article/5100-archive-access-tokens).
 Credentials to access CEDA are stored as environment variables and
 loaded using the ChessConfig class (see chess.config.py for more info).
 Data directories and user configuration parameters are stored in the
