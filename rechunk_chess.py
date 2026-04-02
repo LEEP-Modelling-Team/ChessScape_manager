@@ -109,7 +109,7 @@ if __name__ == "__main__":
 
     os_grid = [code +  f'{num:02}' for code in os_regions for num in range(100)]
 
-    with multiprocessing.Pool(processes=16) as pool:
+    with multiprocessing.Pool(processes=20) as pool:
 
         # Use the pool.map() function to parallelize the loop
         chess_config = ChessConfig('config.ini')
