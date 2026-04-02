@@ -8,26 +8,132 @@ chess_manager.py
 Various utility functions to download and process the ChessScape climate data.
 
 Functions available:
-    - download_chess: Download the ChessScape data from ftp. Requires an account
-      with CEDA with authorisation to use their FTP services. For info:
-      https://help.ceda.ac.uk/article/280-ftp
+    - download_chess: Download the ChessScape data from CEDA via HTTP. Requires
+      a CEDA account. Authentication uses Bearer tokens via the CEDA Token API.
+      For info: https://help.ceda.ac.uk/article/5100-archive-access-tokens
     
 """
-import ftplib
+import json
 import os
+from base64 import b64encode
+from datetime import datetime, timezone
 from os import listdir
 from os.path import isfile, join
 import re
 
+import requests
+
+# Constants for token management
+TOKEN_URL = "https://services.ceda.ac.uk/api/token/create/"
+TOKEN_CACHE = os.path.expanduser(os.path.join("~", ".cedatoken"))
+CEDA_BASE_URL = "https://dap.ceda.ac.uk"
+
+
+def _load_cached_token():
+    """
+    Read the token from the cache file.
+    Returns a tuple containing the token and its expiry timestamp.
+    """
+    try:
+        with open(TOKEN_CACHE, "r", encoding="utf-8") as cache_file:
+            data = json.loads(cache_file.read())
+            token = data.get("access_token")
+            expires = datetime.strptime(
+                data.get("expires"), "%Y-%m-%dT%H:%M:%S.%f%z"
+            )
+            return token, expires
+    except FileNotFoundError:
+        return None, None
+
+
+def _get_token(username, password):
+    """
+    Fetches a download token, either from a cache file or from the token API 
+    using CEDA login credentials.
+    
+    :param username: CEDA username
+    :param password: CEDA password
+    :returns: tuple of (active download token, expiry datetime)
+    """
+    # Check the cache file to see if we already have an active token
+    token, expires = _load_cached_token()
+
+    # If no token has been cached or the token has expired, get a new one
+    now = datetime.now(timezone.utc)
+    if not token or expires < now:
+        if not token:
+            print(f"No previous token found at {TOKEN_CACHE}. Generating fresh token...")
+        else:
+            print(f"Token at {TOKEN_CACHE} has expired. Generating fresh token...")
+
+        credentials = b64encode(
+            f"{username}:{password}".encode("utf-8")
+        ).decode("ascii")
+        headers = {"Authorization": f"Basic {credentials}"}
+
+        response = requests.request("POST", TOKEN_URL, headers=headers, timeout=30)
+
+        if response.status_code == 200:
+            response_data = json.loads(response.text)
+            token = response_data["access_token"]
+            expires = datetime.strptime(
+                response_data.get("expires"), "%Y-%m-%dT%H:%M:%S.%f%z"
+            )
+            # Store the JSON data in the cache file for future use
+            with open(TOKEN_CACHE, "w", encoding="utf-8") as cache_file:
+                cache_file.write(response.text)
+            print("Token generated and cached successfully.")
+        else:
+            error_detail = response.text[:500] if response.text else "No details"
+            raise RuntimeError(
+                f"Failed to generate token (HTTP {response.status_code}).\n"
+                f"Server response: {error_detail}\n"
+                "Check your CEDA username/password and that your account has access "
+                "to the CHESS-SCAPE dataset."
+            )
+    else:
+        print(f"Found existing valid token at {TOKEN_CACHE}.")
+
+    return token, expires
+
+
+def _download_file(url, local_path, token):
+    """
+    Download a single file from CEDA using HTTP with bearer token authentication.
+    
+    :param url: Full URL to the file on CEDA
+    :param local_path: Local file path to save the downloaded file
+    :param token: CEDA access token
+    :returns: True if successful, False otherwise
+    """
+    headers = {"Authorization": f"Bearer {token}"}
+
+    try:
+        response = requests.get(url, headers=headers, stream=True, timeout=300)
+        if response.status_code == 200:
+            with open(local_path, "wb") as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+            return True
+        elif response.status_code == 404:
+            return False
+        else:
+            print(f"HTTP error {response.status_code} downloading {url}")
+            return False
+    except requests.RequestException as e:
+        print(f"Request error downloading {url}: {e}")
+        return False
+
 # pylint: disable=R0914
 # pylint: disable=R1702
-def download_chess(config,**kwargs):
+def download_chess(config, **kwargs):
     '''
-    FTP download of ChessScape data, which is then
-    saved into a specified directory
+    Download ChessScape data from CEDA via HTTP with Bearer token authentication.
+    Data is downloaded and saved into a specified directory.
+    
     :param config: a ChessConfig instance reading the relevant configuration
            parameters. See chess.config.py for more info
-    :param rcps: a list of strings defining the rcp scenarios required for donwload
+    :param rcps: a list of strings defining the rcp scenarios required for download
            (e.g.: ['rcp26', 'rcp45', 'rcp60', 'rcp85']). Refer to the ChessScape
            documentation for information on the data available
     :param climate_vars: a list of climate variables to be downloaded. 
@@ -44,7 +150,7 @@ def download_chess(config,**kwargs):
     end_year = kwargs.get('end_year', 2080) + 1
     rcps = kwargs.get('rcps', ['rcp26', 'rcp45', 'rcp60', 'rcp85'])
     climate_vars = kwargs.get(
-        'climate_vars', 
+        'climate_vars',
         ['tas', 'tasmax', 'tasmin', 'pr', 'rlds', 'rsds', 'hurs', 'sfcWind']
     )
     ensembles = kwargs.get('ensembles', [1, 4, 6, 15])
@@ -53,65 +159,66 @@ def download_chess(config,**kwargs):
     ddir = config.data_dirs['ceda_dir']
     user = config.ceda_parameters['ceda_usr']
     pwd = config.ceda_parameters['ceda_pwd']
-    ftp_addr = config.ceda_parameters['ftp_address']
 
     if not os.path.isdir(ddir):
-        os.mkdir(ddir)
+        os.makedirs(ddir, exist_ok=True)
         print('Download data directory successfully created!')
 
-    # Change the local directory to where you want to put the data
-    os.chdir(ddir)
+    # Get authentication token
+    token, expires = _get_token(user, pwd)
+    print(f"Token valid until: {expires}")
 
-    # login to CEDA FTP
-    f = ftplib.FTP(ftp_addr, user, pwd)
+    downloaded_count = 0
+    skipped_count = 0
 
-    # loop through RCPs
+    # Loop through RCPs
     for rcp in rcps:
-
-        # loop through enselmbles
+        # Loop through ensembles
         for ensemble in ensembles:
-
-            # loop through weather variables
+            # Loop through weather variables
             for var in climate_vars:
-
-                # loop through years
-                for year in range(start_year,end_year):
-
-                    # loop through months
-                    for month in range(1,13):
+                # Loop through years
+                for year in range(start_year, end_year):
+                    # Loop through months
+                    for month in range(1, 13):
                         if bias_corrected:
-                            filedir = (
+                            file_path = (
                                 f"/badc/deposited2021/chess-scape/data/{rcp}"
                                 f"_bias-corrected/{ensemble:02d}/daily/{var}/"
                             )
-                            f.cwd(filedir)
-                            file = (
+                            filename = (
                                 f"chess-scape_{rcp}_bias-corrected_{ensemble:02d}"
                                 f"_{var}_uk_1km_daily_{year:04d}{month:02d}01-"
                                 f"{year:04d}{month:02d}30.nc"
                             )
                         else:
-                            filedir = (
+                            file_path = (
                                 f"/badc/deposited2021/chess-scape/data/{rcp}"
                                 f"/{ensemble:02d}/daily/{var}/"
                             )
-                            f.cwd(filedir)
-                            file = (
+                            filename = (
                                 f"chess-scape_{rcp}_"
                                 f"{ensemble:02d}_{var}_uk_1km_daily_{year:04d}"
                                 f"{month:02d}01-{year:04d}{month:02d}30.nc"
                             )
-                        try:
-                            with open(file, "wb") as local_file:
-                                f.retrbinary(f"RETR {file}", local_file.write)
-                            print(f'Downloading file {file}...')
-                        except FileNotFoundError:
-                            print(f'file {file} not found. Skipping...')
+
+                        url = f"{CEDA_BASE_URL}{file_path}{filename}"
+                        local_file = os.path.join(ddir, filename)
+
+                        # Skip if file already exists
+                        if os.path.exists(local_file):
+                            print(f'File {filename} already exists. Skipping...')
+                            skipped_count += 1
                             continue
 
-    print('All files successfully downloaded')
-    # Close FTP connection
-    f.close()
+                        print(f'Downloading {filename}...')
+                        if _download_file(url, local_file, token):
+                            downloaded_count += 1
+                        else:
+                            print(f'File {filename} not found or error. Skipping...')
+                            skipped_count += 1
+
+    print(f'\nDownload complete! {downloaded_count} files downloaded, {skipped_count} skipped.')
 # pylint: enable=R0914
 # pylint: enable=R1702
 
