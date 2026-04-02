@@ -1,0 +1,12 @@
+﻿name: chess_manager
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python>=3.10
+  - numpy
+  - pandas
+  - xarray
+  - netcdf4
+  - requests
+  - pip
