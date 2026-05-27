@@ -287,12 +287,10 @@ def rechunk_region_100km(
                 if time_index.has_duplicates:
                     tile_var = tile_var.isel(time=~time_index.duplicated())
 
-                mode = 'a' if file_written[tile] else 'w'
-                try:
-                    tile_var.to_netcdf(out_file, mode=mode)
-                except ValueError:
-                    # Fallback for cases where variables have non-identical time axes.
-                    # Rebuild file with an outer time union so appends remain robust.
+                # Deterministic upsert: always merge with existing content and rewrite.
+                # This avoids backend-specific append behavior that can drop variables
+                # or fail when coordinates differ slightly across variables.
+                if os.path.exists(out_file):
                     with xr.open_dataset(out_file) as existing_ds:
                         merged_ds = xr.merge(
                             [existing_ds.load(), tile_var.to_dataset(name=var)],
@@ -300,6 +298,8 @@ def rechunk_region_100km(
                             compat='override'
                         )
                     merged_ds.to_netcdf(out_file, mode='w')
+                else:
+                    tile_var.to_dataset(name=var).to_netcdf(out_file, mode='w')
                 file_written[tile] = True
 
         # Add derived rds once all base variables are persisted.
@@ -377,6 +377,11 @@ if __name__ == "__main__":
         action='store_true',
         help='Run preflight time-coverage diagnostics before processing.'
     )
+    parser.add_argument(
+        '--regions',
+        default='',
+        help='Optional comma-separated 100km region codes to process (e.g. "SV,SW,SX").'
+    )
     skip_group = parser.add_mutually_exclusive_group()
     skip_group.add_argument(
         '--skip-existing',
@@ -409,6 +414,15 @@ if __name__ == "__main__":
         'HZ', 'HT', 'HU', 'HO', 'HP'
     ]
 
+    if args.regions.strip():
+        requested = [r.strip().upper() for r in args.regions.split(',') if r.strip()]
+        invalid = [r for r in requested if r not in os_regions]
+        if invalid:
+            raise ValueError(f'Invalid region codes in --regions: {invalid}')
+        selected_regions = requested
+    else:
+        selected_regions = os_regions
+
     # Use the pool.map() function to parallelize the loop
     chess_config = ChessConfig('config.ini')
     RCP = args.rcp
@@ -423,6 +437,13 @@ if __name__ == "__main__":
         for var in CLIMATE_VARS
     }
 
+    print('\n=== Run configuration ===')
+    print(f'RCP: {RCP} | Ensemble: {ENSEMBLE}')
+    print(f'Year window: {args.start_year}-{args.end_year}')
+    print(f'Regions: {len(selected_regions)} | Workers: {args.workers}')
+    for var in CLIMATE_VARS:
+        print(f'  {var}: {len(file_map[var])} files')
+
     if args.validate_time:
         _preflight_time_coverage(file_map, CLIMATE_VARS)
 
@@ -436,7 +457,7 @@ if __name__ == "__main__":
             skip_existing=args.skip_existing,
             verbose=args.verbose
         )
-        total_regions = len(os_regions)
+        total_regions = len(selected_regions)
         completed_regions = 0
         start_time = time.time()
         results = []
@@ -444,7 +465,7 @@ if __name__ == "__main__":
         if args.progress_every < 1:
             args.progress_every = 1
 
-        for result in pool.imap_unordered(rechunk_chess_partial, os_regions):
+        for result in pool.imap_unordered(rechunk_chess_partial, selected_regions):
             results.append(result)
             completed_regions += 1
 

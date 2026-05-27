@@ -67,6 +67,7 @@ The rechunking script supports the following command-line arguments:
 - `--progress-every` Print one lightweight global progress update every N completed regions (default: `1`)
 - `--progress-file` Optional path to write machine-readable progress status (JSON-like text)
 - `--validate-time` Run a preflight check that reports per-variable time coverage before processing
+- `--regions` Optional comma-separated list of 100km region codes to process (for quick tests)
 - `--skip-existing` Skip tile outputs already present on disk (resume mode, default)
 - `--overwrite-existing` Remove and regenerate existing tile outputs (full rerun mode)
 
@@ -84,5 +85,7 @@ Examples:
     `python rechunk_chess.py --skip-existing --workers 8 --validate-time`
 - Process only years 2020 to 2080:
     `python rechunk_chess.py --skip-existing --workers 8 --start-year 2020 --end-year 2080`
+- Test the pipeline on a small subset of regions before full run:
+    `python rechunk_chess.py --overwrite-existing --workers 4 --regions SV,SW --start-year 2020 --end-year 2022`
 
 Both scripts can take user-defined input parameters (see docstrings in both scripts for further options and instructions).
