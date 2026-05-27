@@ -15,10 +15,9 @@ Two main features are contained in this repository:
 
 **2 - DATA REORGANISATION: rechunk_chess.py**  
     Chess-scape daily weather projections are organised for each RCP and ensemble member in files containing a single climate variable for a one month time series for 
-    all 1km cells in GB. This script rechunks the chess-scape netCDF files in two ways, based on user input:
-    1 - each chunk contains a daily time series of all climatic variables for 100 cells contained in each 10km2 tile of the British National Grid.
-    2 - each chunk contains a daily time series of all climatic variables for 10000 cells contained in each 100km2 tile of the British National Grid.  
-    For both cases, the length of the time series will be based on the years available, which depend on whether the user has downloaded all available years or a custom range (see bulkdownloader.py above)
+    all 1km cells in GB. The script now uses a 100km-first processing strategy for better performance: each source monthly netCDF file is read once per 100km region and then split into the 100 corresponding 10km tiles in memory.
+    The output remains one netCDF per 10km tile, containing a daily time series of all climatic variables for the 100 cells in that tile.
+    This greatly reduces repeated file I/O compared with tile-by-tile reading and is designed for faster large-scale rechunking.
 
 ## SETUP
 Before using the ChessScape Manager, make sure to register for a CEDA account and obtain access to the CHESS-SCAPE dataset (https://help.ceda.ac.uk/article/5100-archive-access-tokens).  
@@ -54,6 +53,29 @@ Open a terminal and navigate to the main folder containing the repository.
 - To run the bulk downloader, type in terminal  
     `python bulk_downloader.py`
 - To run the file rechunking programme, after having downloaded the dataset, type in terminal:  
-    `python rechunk_chess.py`  
-    
-Both commands will run the programmes with default parameters. Both scripts can take user-defined input parameters (see docstring in both scripts for the available options and further instructions)
+        `python rechunk_chess.py`  
+
+### Rechunking arguments
+The rechunking script supports the following command-line arguments:
+
+- `--rcp` RCP scenario to process (default: `rcp45`)
+- `--ensemble` Ensemble member to process (default: `01`)
+- `--workers` Number of parallel workers (default: `18`)
+- `--verbose` Enable detailed progress logging
+- `--progress-every` Print one lightweight global progress update every N completed regions (default: `1`)
+- `--progress-file` Optional path to write machine-readable progress status (JSON-like text)
+- `--skip-existing` Skip tile outputs already present on disk (resume mode, default)
+- `--overwrite-existing` Remove and regenerate existing tile outputs (full rerun mode)
+
+Examples:
+
+- Resume an interrupted run and skip existing outputs:
+    `python rechunk_chess.py --skip-existing --workers 8`
+- Force full rerun of all outputs:
+    `python rechunk_chess.py --overwrite-existing --workers 8`
+- Show less frequent progress updates (every 5 completed regions):
+    `python rechunk_chess.py --skip-existing --workers 8 --progress-every 5`
+- Write progress to a status file while running:
+    `python rechunk_chess.py --skip-existing --workers 8 --progress-file rechunk_progress.json`
+
+Both scripts can take user-defined input parameters (see docstrings in both scripts for further options and instructions).
