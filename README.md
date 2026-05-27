@@ -60,10 +60,13 @@ The rechunking script supports the following command-line arguments:
 
 - `--rcp` RCP scenario to process (default: `rcp45`)
 - `--ensemble` Ensemble member to process (default: `01`)
+- `--start-year` First year to include (default: `1980`)
+- `--end-year` Last year to include (default: `2080`)
 - `--workers` Number of parallel workers (default: `18`)
 - `--verbose` Enable detailed progress logging
 - `--progress-every` Print one lightweight global progress update every N completed regions (default: `1`)
 - `--progress-file` Optional path to write machine-readable progress status (JSON-like text)
+- `--validate-time` Run a preflight check that reports per-variable time coverage before processing
 - `--skip-existing` Skip tile outputs already present on disk (resume mode, default)
 - `--overwrite-existing` Remove and regenerate existing tile outputs (full rerun mode)
 
@@ -77,5 +80,9 @@ Examples:
     `python rechunk_chess.py --skip-existing --workers 8 --progress-every 5`
 - Write progress to a status file while running:
     `python rechunk_chess.py --skip-existing --workers 8 --progress-file rechunk_progress.json`
+- Validate variable time coverage before a long run:
+    `python rechunk_chess.py --skip-existing --workers 8 --validate-time`
+- Process only years 2020 to 2080:
+    `python rechunk_chess.py --skip-existing --workers 8 --start-year 2020 --end-year 2080`
 
 Both scripts can take user-defined input parameters (see docstrings in both scripts for further options and instructions).

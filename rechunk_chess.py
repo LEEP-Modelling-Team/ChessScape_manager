@@ -38,6 +38,59 @@ def _format_duration(seconds):
     minutes, secs = divmod(rem, 60)
     return f'{hours:02}:{minutes:02}:{secs:02}'
 
+
+def _preflight_time_coverage(file_map, climate_vars):
+    """
+    Read per-file metadata and report total timesteps per climate variable.
+    This helps explain dimension mismatches before long runs.
+    """
+    summary = {}
+    for var in climate_vars:
+        file_list = file_map.get(var, [])
+        total_time = 0
+        min_time = None
+        max_time = None
+        bad_files = 0
+
+        for file in file_list:
+            try:
+                with xr.open_dataset(file, engine='netcdf4', decode_times=False) as ds:
+                    tsize = int(ds.sizes.get('time', 0))
+                total_time += tsize
+                if min_time is None or tsize < min_time:
+                    min_time = tsize
+                if max_time is None or tsize > max_time:
+                    max_time = tsize
+            except (OSError, ValueError, KeyError):
+                bad_files += 1
+
+        summary[var] = {
+            'file_count': len(file_list),
+            'total_time': total_time,
+            'min_file_time': min_time if min_time is not None else 0,
+            'max_file_time': max_time if max_time is not None else 0,
+            'bad_files': bad_files
+        }
+
+    print('\n=== Preflight time coverage ===')
+    for var in climate_vars:
+        row = summary[var]
+        print(
+            f"{var:8} files={row['file_count']:4d} "
+            f"total_time={row['total_time']:6d} "
+            f"file_time[min,max]=[{row['min_file_time']},{row['max_file_time']}] "
+            f"bad_files={row['bad_files']}"
+        )
+
+    totals = {row['total_time'] for row in summary.values()}
+    if len(totals) > 1:
+        print('WARNING: Climate variables have different total time coverage.')
+        print('This explains dimension mismatch errors when forcing strict append semantics.')
+    else:
+        print('All climate variables have matching total time coverage.')
+
+    return summary
+
 # pylint: disable=R0914
 def rechunk_chess(
         os_cell,
@@ -228,9 +281,25 @@ def rechunk_region_100km(
                 if not parts:
                     continue
                 out_file = os.path.join(out_path, f'{tile}_{rcp}_{ensemble}.nc')
-                tile_var = xr.concat(parts, dim='time').rename(var)
+                tile_var = xr.concat(parts, dim='time').sortby('time').rename(var)
+                # Guard against accidental duplicate timestamps from source file lists.
+                time_index = tile_var.get_index('time')
+                if time_index.has_duplicates:
+                    tile_var = tile_var.isel(time=~time_index.duplicated())
+
                 mode = 'a' if file_written[tile] else 'w'
-                tile_var.to_netcdf(out_file, mode=mode)
+                try:
+                    tile_var.to_netcdf(out_file, mode=mode)
+                except ValueError:
+                    # Fallback for cases where variables have non-identical time axes.
+                    # Rebuild file with an outer time union so appends remain robust.
+                    with xr.open_dataset(out_file) as existing_ds:
+                        merged_ds = xr.merge(
+                            [existing_ds.load(), tile_var.to_dataset(name=var)],
+                            join='outer',
+                            compat='override'
+                        )
+                    merged_ds.to_netcdf(out_file, mode='w')
                 file_written[tile] = True
 
         # Add derived rds once all base variables are persisted.
@@ -278,6 +347,18 @@ if __name__ == "__main__":
     )
     parser.add_argument('--rcp', default='rcp45', help='RCP scenario to process (default: rcp45).')
     parser.add_argument('--ensemble', default='01', help='Ensemble member to process (default: 01).')
+    parser.add_argument(
+        '--start-year',
+        type=int,
+        default=1980,
+        help='First year to include in rechunking (default: 1980).'
+    )
+    parser.add_argument(
+        '--end-year',
+        type=int,
+        default=2080,
+        help='Last year to include in rechunking (default: 2080).'
+    )
     parser.add_argument('--workers', type=int, default=18, help='Number of parallel workers (default: 18).')
     parser.add_argument('--verbose', action='store_true', help='Enable detailed progress logging.')
     parser.add_argument(
@@ -290,6 +371,11 @@ if __name__ == "__main__":
         '--progress-file',
         default='',
         help='Optional path for writing machine-readable progress updates.'
+    )
+    parser.add_argument(
+        '--validate-time',
+        action='store_true',
+        help='Run preflight time-coverage diagnostics before processing.'
     )
     skip_group = parser.add_mutually_exclusive_group()
     skip_group.add_argument(
@@ -306,6 +392,9 @@ if __name__ == "__main__":
     )
     parser.set_defaults(skip_existing=True)
     args = parser.parse_args()
+
+    if args.start_year > args.end_year:
+        raise ValueError('--start-year must be <= --end-year')
 
     os_regions = [
         'SV', 'SW', 'SX', 'SY', 'SZ', 'TV',
@@ -324,7 +413,7 @@ if __name__ == "__main__":
     chess_config = ChessConfig('config.ini')
     RCP = args.rcp
     ENSEMBLE = args.ensemble
-    YEARS = list(range(1980, 2081))
+    YEARS = list(range(args.start_year, args.end_year + 1))
     CLIMATE_VARS = ['tas', 'tasmax', 'tasmin', 'pr', 'rlds', 'rsds', 'hurs', 'sfcWind']
 
     # Precompute file lists once instead of re-scanning the directory in every worker.
@@ -333,6 +422,9 @@ if __name__ == "__main__":
         var: filter_files(RCP, YEARS, var, ENSEMBLE, nc_path)
         for var in CLIMATE_VARS
     }
+
+    if args.validate_time:
+        _preflight_time_coverage(file_map, CLIMATE_VARS)
 
     with multiprocessing.Pool(processes=args.workers) as pool:
         rechunk_chess_partial = partial(
